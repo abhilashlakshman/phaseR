@@ -10,4 +10,4 @@ Run all the codes in install.R. This is required to be done only once and for th
 Please see the following manuscript for an example of the new functions included in phaseR:
 [Abhilash et al., 2026](https://www.cell.com/current-biology/fulltext/S0960-9822(26)00015-1).
 
-Please READ the [manual](https://github.com/abhilashlakshman/phaseR/blob/main/phaseR_UserManual_v01.html) before using.
+Please READ the [manual](https://github.com/abhilashlakshman/phaseR/blob/main/phaseR_UserManual_v01.html) before using. Download the raw HTML file in the link and open in any web browser for easy access to the manual.
