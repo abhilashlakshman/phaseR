@@ -1,0 +1,918 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document: default
+---
+# phaseR User Manual
+**Version:** June 2025 | **App name:** phaseR
+**Repository:** [abhilashlakshman/phaseR](https://github.com/abhilashlakshman/phaseR)
+**Underlying R package:** [`phase`](https://cran.r-project.org/web/packages/phase/index.html) (Abhilash, 2023)
+
+---
+
+## How to Read This Manual
+
+> 🧪 **For the bench biologist** — The main text explains what every button does and what the output means in biological terms. No R knowledge assumed.
+>
+> 💻 **For the computationally inclined** — Grey callout boxes like this one explain what is happening under the hood, with function names and parameter details from the `phase` package.
+
+---
+
+## Table of Contents
+
+1. [What is phaseR?](#1-what-is-phaser)
+2. [Installation and Launch](#2-installation-and-launch)
+3. [Your Data: What to Expect](#3-your-data-what-to-expect)
+4. [Tab-by-Tab Guide](#4-tab-by-tab-guide)
+   - [Tab 1: Input](#tab-1-input)
+   - [Tab 2: Full Monitor Data](#tab-2-full-monitor-data)
+   - [Tab 3: All Periodograms](#tab-3-all-periodograms)
+   - [Tab 4: Individual Data](#tab-4-individual-data)
+   - [Tab 5: Continuous Wavelet Transforms](#tab-5-continuous-wavelet-transforms)
+   - [Tab 6: Profiles](#tab-6-profiles)
+   - [Tab 7: Sleep Statistics](#tab-7-sleep-statistics)
+   - [Tab 8: Anticipation (Activity)](#tab-8-anticipation-activity)
+   - [Tab 9: Phases of Peaks](#tab-9-phases-of-peaks)
+   - [Tab 10: Rose Plots and CoM](#tab-10-rose-plots-and-com)
+   - [Tab 11: Batch Process](#tab-11-batch-process)
+5. [Removing Dead or Unwanted Channels](#5-removing-dead-or-unwanted-channels)
+6. [Downloading Your Results](#6-downloading-your-results)
+7. [Worked Example: A Full Analysis Walkthrough](#7-worked-example-a-full-analysis-walkthrough)
+8. [Frequently Asked Questions](#8-frequently-asked-questions)
+9. [Glossary](#9-glossary)
+
+---
+
+## 1. What is phaseR?
+
+phaseR is a point-and-click analysis suite for *Drosophila* locomotor activity and sleep data recorded using the **Drosophila Activity Monitor (DAM)** system (TriKinetics). It requires no programming. You upload your raw data file, set a few parameters, and the app handles everything from data trimming to statistical analysis and figure generation.
+
+**What phaseR can do:**
+
+| Analysis | Available for Activity | Available for Sleep |
+|---|:---:|:---:|
+| Actograms / Somnograms | ✅ | ✅ |
+| Periodograms (χ², Autocorr, Lomb-Scargle) | ✅ | ✅ |
+| Continuous Wavelet Transform (ultradian rhythms) | ✅ | — |
+| Activity/Sleep profiles | ✅ | ✅ |
+| Sleep bout statistics (bout number, duration, latency) | — | ✅ |
+| Hypnograms (sleep staging) | — | ✅ |
+| Anticipation of lights-on / lights-off | ✅ | — |
+| Automated peak phase identification | ✅ | — |
+| Rose plots & Centre of Mass (circular statistics) | ✅ | ✅ |
+| Batch processing (multiple monitors at once) | ✅ | ✅ |
+
+---
+
+## 2. Installation and Launch
+
+### Step 1 — Install R and RStudio
+Download and install R (≥ 4.0) from [r-project.org](https://www.r-project.org/) and RStudio Desktop (free) from [posit.co](https://posit.co/download/rstudio-desktop/).
+
+### Step 2 — Install required packages (do this once)
+Open RStudio. Open the file `install.R` from the phaseR folder and click **Run**. This installs the `phase` package and all dependencies.
+
+```r
+rm(list=ls())
+install.packages(pkg = "phase", dependencies = T)
+install.packages(pkg = "writexl", dependencies = T)
+```
+
+You should see messages saying packages were successfully installed.
+
+### Step 3 — Launch the app
+In RStudio, open either `server.R` or `ui.R` from the phaseR folder. A **Run App** button will appear at the top right of the script editor. Click it. The app opens in your browser (or RStudio's internal viewer).
+
+> 💻 You can also run `shiny::runApp("path/to/phaseR")` from the R console. The app uses the `phase`, `shiny`, `shinythemes`, `shinydashboard`, `plotly`, `WaveletComp`, `zoo`, `boot`, and `writexl` packages.
+
+---
+
+## 3. Your Data: What to Expect
+
+### Input file format
+phaseR accepts the **raw tab-delimited output** from a TriKinetics DAM monitor — the `.txt` file that comes directly off your DAM system, unchanged.
+
+- The file has **no header row** by default.
+- Columns 1–10 contain metadata (date, time, monitor ID, status flags, etc.).
+- **Columns 11–42** contain the beam-break counts for channels 1–32, one row per time bin.
+- Each row = one recording interval (typically 1 minute).
+
+**You do not need to edit or reformat your DAM file.** Upload it as-is.
+
+> 💻 The `phase` package function `trimData()` reads this file and trims it to your specified start date/time and number of days. It expects the standard 42-column TriKinetics DAM2/DAM5 format.
+
+### Practice data
+The `phase` R package includes a built-in example dataset called `df`. It contains 1-minute resolution beam-break data from wildtype *Drosophila* recorded in LD 12:12 followed by DD. You can export this as a `.txt` file to practice with phaseR before using your own data. To do so, run in R:
+
+```r
+library(phase)
+data(df)
+write.table(df, "example_dam_data.txt", sep="\t", row.names=FALSE, col.names=FALSE)
+```
+
+Then upload `example_dam_data.txt` into phaseR.
+
+---
+
+## 4. Tab-by-Tab Guide
+
+---
+
+### Tab 1: Input
+
+**This is the most important tab. All other analyses depend on settings you make here.**
+
+When you open phaseR, you land on the **Input** tab. The sidebar on the left holds all your global settings. The main panel on the right gives you a preview of your data once loaded.
+
+---
+
+#### Left sidebar controls
+
+**Choose DAM Monitor File**
+Click **Browse** and select your `.txt` DAM file. The file is uploaded immediately.
+
+---
+
+**Analysis start date and time**
+Format: `DD Mon YY; HH:MM`
+Example: `01 Jun 25; 00:00`
+
+This tells phaseR where to begin trimming your recording. **Always set this to ZT0 (lights-on) or CT0 (subjective dawn in constant conditions)** on the first day you want to analyse. This ensures the circadian phase is correctly aligned throughout all downstream analyses.
+
+> 🧪 **Example:** If your lights turned on at midnight on 1 June 2025, type `01 Jun 25; 00:00`. If lights-on was at 8 AM, type `01 Jun 25; 08:00`.
+
+> ⚠️ Getting this wrong will misalign your phase labels everywhere. Always double-check the Preview table (described below) to confirm the first row of data matches the time you expect.
+
+> 💻 This string is split on `"; "` to extract the date and time, then passed to `trimData(data, start.date=date, start.time=time, ...)`.
+
+---
+
+**Number of days to analyse**
+Default: 5 | Range: 1–30
+
+How many full 24-h (or T-cycle) periods of data you want to include. Only complete cycles are used. Setting this to 5 for a 7-day recording lets you exclude the last 2 days.
+
+---
+
+**Input bin (min)**
+Default: 1 | Range: 1–720
+
+The time resolution of your raw DAM file. For most modern DAM setups, this is **1 minute**. Check your DAM acquisition software settings if unsure. Using the wrong input bin will distort all period and phase estimates.
+
+---
+
+**Output bin (min)**
+Default: 30 | Range: 1–720
+
+The time resolution you want for visualizations and most analyses. The raw data is re-binned (summed) into these larger windows. Common choices:
+
+| Output bin | Best for |
+|---|---|
+| 1 min | Hypnograms, sleep staging |
+| 5 min | Peak identification |
+| 30 min | Actograms, profiles, periodograms |
+| 60 min | Coarse overview plots |
+
+> 💻 This corresponds to the `output.bin` parameter in `binData(data, input.bin, output.bin, t.cycle)`.
+
+---
+
+**T-cycle / Modulo tau**
+Default: 24 | Range: 10–32
+
+The period of your experimental light-dark cycle (for LD experiments) or the expected free-running period (for DD/LL experiments). For a standard LD 12:12 experiment, leave this at **24**. For a T22 skeleton photoperiod experiment, set it to **22**. For free-running flies with a ~23.5 h period, you can set this to 23.5 to fold actograms to that period.
+
+> ⚠️ For free-running experiments, setting modulo tau to 24 is still correct for periodogram analysis — the periodogram will find the true period. Modulo tau mainly affects how actograms and profiles are folded and displayed.
+
+---
+
+**Data to analyse**
+Choices: **Activity** | **Sleep**
+
+- **Activity**: Uses raw beam-break counts. Analyses locomotor activity.
+- **Sleep**: Converts activity data into sleep using the sleep definition you set below. A fly is considered asleep when it is continuously inactive for at least the threshold duration.
+
+> 💻 Internally: Activity uses `binData()`; Sleep uses `sleepData(data, sleep.def, bin, t.cycle)`.
+
+---
+
+**Sleep Definition (mins)**
+Default: 5
+
+Only relevant if you selected **Sleep** or **Wakefulness** above. This is the **minimum continuous inactivity duration (in minutes)** required to score a period as sleep.
+
+- Enter a single number (e.g., `5`) to score any bout ≥ 5 minutes as sleep.
+- Enter a range (e.g., `5-30`) to score only bouts between 5 and 30 minutes as sleep (useful for isolating short-sleep bouts).
+
+> 🧪 **Standard definition:** `5` — any inactivity bout lasting 5 or more minutes is scored as sleep. This is the most widely used definition in *Drosophila* sleep research (Shaw et al. 2000, Hendricks et al. 2000).
+
+---
+
+**Color of actograms/somnograms**
+Default: `0,0,0,1` (solid black)
+Format: `r,g,b,t` where each value is between 0 and 1.
+
+This sets the fill color of all actogram and somnogram bars throughout the app. Examples:
+- `0,0,0,1` → black
+- `0,0,1,1` → blue
+- `0,0.5,0,0.8` → semi-transparent dark green
+- `0.6,0,0,1` → dark red
+
+---
+
+**Preview data (button)**
+Click this once to generate the preview tables in the main panel. You should do this after every change to confirm settings are correct.
+
+---
+
+#### Right main panel (after clicking Preview data)
+
+**Trimmed data tab:** Shows the first 10 rows of your data after trimming to the start date/time. Check that:
+1. The date/time in the first row matches your intended start.
+2. The channel count columns (columns 3–34 in the preview) contain numbers (not all zeros or all blanks).
+
+**Binned data tab:** Shows the data after re-binning to your output bin size. The first column is the ZT/CT time label; columns 2–33 are channels 1–32.
+
+---
+
+### Tab 2: Full Monitor Data
+
+**Purpose:** A bird's-eye view of the entire experiment — all 32 channels at once, in one interactive plot.
+
+The plot updates automatically once you have loaded data in Tab 1. There are no additional controls on this tab.
+
+---
+
+**What you see:**
+- **For Activity:** An actogram-style raster plot (`allActograms`). Each row is one day. Each column is one time point within a cycle. Bar height = activity level. Bars are colored using the color you set in Tab 1.
+- **For Sleep:** A somnogram raster (`allSomnograms`). Bar height = minutes of sleep per bin.
+
+The 32 channels are stacked vertically — channel 1 at the top, channel 32 at the bottom. This gives you a rapid overview of the whole monitor.
+
+**How to use:**
+- Scan vertically to identify dead channels (flat lines with no activity or constant low activity).
+- Scan horizontally to check entrainment quality — in LD, all active channels should show simultaneous bouts.
+- Zoom in by clicking and dragging on the interactive Plotly plot.
+- Hover over any bar to see the exact ZT time and activity/sleep value.
+- Note arrhythmic flies (scattered random activity with no daily pattern) for removal.
+
+> 🧪 **Example:** You upload a 5-day LD 12:12 recording. The full monitor view should show a repeating pattern with high activity in the subjective day and low activity at night in most channels. Channels that are completely flat (dead flies or empty tubes) stand out immediately.
+
+---
+
+### Tab 3: All Periodograms
+
+**Purpose:** Estimate the free-running period (τ) of every fly in the monitor simultaneously, and assess whether each fly is rhythmically significant.
+
+---
+
+#### Sidebar controls
+
+**Periodogram Method**
+Three options:
+
+| Method | Best for | Notes |
+|---|---|---|
+| **ChiSquare** | DD free-running data, robust activity | Most widely used; the Sokolove-Bushell χ² periodogram |
+| **Autocorrelation** | Entrained (LD) or moderately noisy data | Good for confirming LD entrainment |
+| **LombScargle** | Noisy data, gaps in recording | More robust to missing values |
+
+> 💻 These call `allPeriodogramsAct()` or `allPeriodogramsSleep()` from the `phase` package with `method="ChiSquare"`, `"Autocorrelation"`, or `"LombScargle"` respectively.
+
+---
+
+**Lowest period (hrs)**
+Default: 14 | Range: 6–22
+
+The shortest period you want to look for. For circadian rhythms, 16 h is a sensible lower bound. For ultradian rhythms, you can go as low as 6 h (but the Wavelet tab is better suited for that — see Tab 5).
+
+**Highest period (hrs)**
+Default: 32 | Range: 26–36
+
+The longest period to scan. 32 h covers all known *Drosophila* long-period mutants.
+
+**Alpha for significance tests**
+Default: 0.05
+
+The statistical significance threshold. The periodogram plots a significance line; any power peak exceeding this line is considered a significant rhythm at p < alpha. Keep this at 0.05 unless you have a specific reason to change it.
+
+**Resolution of periods to analyse (mins)**
+Default: 20 | Range: 10–360
+
+This controls the precision of period estimation. Smaller values = finer resolution but slower computation.
+- For a quick screen: 30 min is fine.
+- For publication-quality period estimates: 10–15 min.
+
+> 💻 This is the `time.res` parameter in `allPeriodogramsAct()`.
+
+---
+
+**Generate plots and data (button)**
+This analysis is computationally intensive (it runs a periodogram on all 32 channels). Click this button when you are ready — it does not run automatically.
+
+---
+
+#### Main panel outputs
+
+**Plots tab:**
+An interactive grid of periodograms, one per channel. Each panel shows:
+- **X-axis**: Period (hours).
+- **Y-axis**: Power (the strength of rhythmicity at each period).
+- **Black line**: Periodogram power curve.
+- **Red line**: Significance threshold at your chosen alpha.
+
+Any black peak that rises **above the red line** indicates a statistically significant rhythm at that period. The period at the peak = the fly's estimated τ.
+
+**Data tab:**
+A table summarizing the period and power extracted from each fly's periodogram. Use the **Download data** button to save this as a timestamped `.csv` file.
+
+> 🧪 **Example (LD 12:12):** Using ChiSquare, period range 18–30 h, you expect most wild-type flies to show a significant peak near 24 h. A flat periodogram (no peak above the red line) = arrhythmic fly. A peak at 12 h in addition to 24 h can indicate harmonic artifacts or ultradian components.
+
+> 🧪 **Example (DD free-running):** Wild-type *Canton-S* flies typically show τ ≈ 23.5–24.5 h in DD. Use LombScargle if your data has gaps or elevated noise from moribund flies.
+
+---
+
+### Tab 4: Individual Data
+
+**Purpose:** Detailed, side-by-side visualization of a single fly — its actogram/somnogram plus all three periodograms — and interactive phase picking directly from the actogram.
+
+---
+
+#### Sidebar controls
+
+**Channel number**
+Default: 1 | Range: 1–32
+
+Select which fly (DAM channel) to examine. The actogram and all three periodogram plots update automatically when you change this.
+
+> 🧪 Start with a channel that looked rhythmic and well-behaved in the Full Monitor view. Then cycle through channels to examine individual flies.
+
+---
+
+#### Main panel outputs
+
+**Acto/Somno-gram panel (top left):**
+A bar-chart actogram for the selected channel. Each bar is one output bin. Days are stacked from top (day 1) to bottom. The color matches what you set in Tab 1.
+
+**Chi-Sq panel (top right):**
+Chi-square periodogram for this individual fly, using the same period range and alpha set in Tab 3.
+
+**LS panel (middle left):**
+Lomb-Scargle periodogram for this individual fly.
+
+**Autocorr panel (middle right):**
+Autocorrelation periodogram for this individual fly.
+
+Having all three periodograms simultaneously lets you cross-validate period estimates. A period that appears significant in all three methods is most reliable.
+
+---
+
+**Phase picking (bottom panel)**
+
+This is phaseR's interactive phase estimation tool. You can click directly on the actogram bars to record the time of any rhythmic event (e.g., activity peak, sleep onset, wake time).
+
+**How to pick phases:**
+1. Look at the actogram for the channel you've selected.
+2. Zoom in (click and drag on the Plotly plot) to the feature you want to mark — e.g., the morning activity peak on each day.
+3. Click the **top of the activity bar** that represents your chosen landmark.
+4. A row appears in the phase table below the plots.
+
+**The phase table has three columns:**
+- **Phase (ZT/CT/Time):** The clock time of your click, read directly from the binned data's time column (in ZT or CT hours, depending on how you set the start time).
+- **Cycle:** Which day of the recording (cycle number) the click was on.
+- **Channel:** Which channel you were viewing.
+
+Repeat for each day and each channel of interest. The table accumulates all your clicks.
+
+> ⚠️ The phase table **resets if you reload the app**. Download your data immediately after picking phases using the **Download data** button beneath the table.
+
+> 💻 Internally: each click event is captured via Plotly's `event_data("plotly_click", source="actogram.phases")`. The phase is read as `binnedDataInput()[d$x, 1]` — i.e., directly from the ZT/CT time column of the binned data at the clicked x-index.
+
+> 🧪 **Convention:** Most labs mark the peak of the evening activity bout (E peak) as phase. Make sure you are consistent across all flies and all experiments. Note in your records what landmark you chose.
+
+---
+
+### Tab 5: Continuous Wavelet Transforms
+
+**Purpose:** Detect and characterize **ultradian rhythms** (rhythms shorter than 24 h — e.g., 1–12 h rest-activity cycles) and track how rhythmic periods change over time. This is the most computationally intensive tab.
+
+---
+
+#### Sidebar controls
+
+**Lowest period (hrs)** and **Highest period (hrs)**
+Default: 1–35. Set these to bracket the range of periods you want to detect. For ultradian rhythms, 1–12 h is appropriate. To include circadian rhythms as well, extend to 35 h.
+
+**Channels to remove**
+Default: `None`
+Enter channel numbers to exclude (e.g., dead flies, empty tubes) before computing the mean scalogram. See [Section 5](#5-removing-dead-or-unwanted-channels) for syntax.
+
+**Remove Edge Effects in Scalogram**
+Default: `TRUE`
+Wavelet analysis suffers from **cone-of-influence** artifacts at the beginning and end of the recording — periods longer than the recording itself cannot be reliably estimated near the edges. Setting this to `TRUE` masks these unreliable regions (`NA`) so they do not bias the mean scalogram. Recommended: **always keep TRUE**.
+
+**Maximum color value for scalograms (z.max)**
+Default: 1. Adjust this to improve contrast in the scalogram heatmap. If the scalogram looks uniformly yellow-red (saturated), increase this value. If it looks uniformly blue (too low), decrease it.
+
+**Maximum y-axis value for period vs power plots**
+Default: 5. Sets the y-axis ceiling for the time-averaged power plot. Adjust so your peak is visible without being clipped.
+
+**Bootstrap 95% confidence intervals**
+Default: `TRUE`. When `TRUE`, bootstrapped 95% CIs are overlaid on the time-averaged period vs power plot, giving you a sense of how reproducible the mean power estimate is across flies.
+
+**Replicates for bootstrapping**
+Default: 1000. The number of bootstrap iterations. 1000 is standard; reduce to 100 for speed during exploratory analysis.
+
+**Replicate number (for Individual Scalograms tab)**
+Select which fly's individual scalogram to view in the "Individual Scalograms" sub-tab.
+
+**Lower/Upper limit for ultradian period (hrs)**
+Default: 1–4. Used in the "Extract ultradian periodicity" sub-tab to define the window within which the dominant ultradian period is extracted for each fly.
+
+**Analyze and Plot (button)**
+The CWT analysis runs on all 32 channels simultaneously, so it is slow (1–5 minutes depending on recording length). Click this when you are ready and wait for the spinner to stop.
+
+---
+
+#### Main panel sub-tabs
+
+**Scalograms (Mean)**
+A heatmap with:
+- **X-axis**: Time (days, half-day ticks).
+- **Y-axis**: Period (hours, on a log scale — standard for scalograms).
+- **Color**: Normalized wavelet power (blue = low, yellow/red = high).
+
+Bright horizontal bands at a specific period indicate persistent rhythmicity at that period throughout the experiment. A band that appears and disappears indicates a transient rhythm. A bright band at ~24 h confirms circadian rhythmicity. Bands at 1–12 h indicate ultradian rhythms.
+
+The **Download data** button saves the normalized power matrices for all flies as a multi-sheet `.xlsx` file.
+
+**Period vs Power Plots**
+A line plot of the group mean normalized power across all flies at each period, time-averaged over the entire recording. The shaded region is the bootstrapped 95% CI. Peaks indicate dominant periodicities in your population.
+
+**Period vs Power Data**
+The tabular version of the above, downloadable as `.csv`.
+
+**Individual Scalograms**
+The scalogram for the single fly selected in "Replicate number". Useful for examining fly-by-fly variation.
+
+**Extract ultradian periodicity**
+A table listing the dominant period (within your specified lower–upper ultradian range) for each fly — the period at which wavelet power is maximum within that window. Downloadable as `.csv`.
+
+> 💻 CWT is computed using `WaveletComp::analyze.wavelet()` with Morlet wavelets (`loess.span=0`, `dt=1`, `make.pval=FALSE`). Power is normalized by the mean power per fly. The group mean scalogram is the element-wise mean of all individual normalized power matrices, with edge-affected regions set to `NA`.
+
+> 🧪 **Example:** You record wild-type flies for 5 days in DD. The mean scalogram shows a bright horizontal band at ~24 h (circadian) and a faint band at ~90 min (ultradian rest-activity cycle — sometimes called the "Drosophila rest-activity cycle"). Set the ultradian period window to 1–3 h and extract the dominant period table.
+
+---
+
+### Tab 6: Profiles
+
+**Purpose:** Compute and display the average activity or sleep profile — how the variable of interest is distributed across one cycle (one "average day"), averaged across flies and/or days.
+
+---
+
+#### Sidebar controls
+
+**Average over**
+Options: `Flies` | `Days` | `Both` | `None`
+
+| Option | What it does |
+|---|---|
+| **Flies** | Averages across all flies at each time bin, preserving day-by-day resolution |
+| **Days** | Averages across all days for each fly individually, preserving fly-by-fly variation |
+| **Both** | Averages across both flies AND days — gives a single population mean profile |
+| **None** | Returns the raw binned data matrix without averaging |
+
+For a publication-quality mean daily profile, use **Both**. For examining individual variation, use **Days**.
+
+**Channels to remove**
+Exclude dead flies or outliers. See [Section 5](#5-removing-dead-or-unwanted-channels).
+
+> 💻 Calls `profilesAct()` or `profilesSleep()` from the `phase` package with `average.type` set accordingly.
+
+---
+
+#### Main panel outputs
+
+**Plots tab:** An interactive line plot of the profile. X-axis = time bin within one cycle (ZT/CT hours). Y-axis = mean activity counts/bin (for Activity) or mean minutes of sleep/bin (for Sleep).
+
+**Data tab:** The underlying data matrix. Download button saves it as a timestamped `.csv`.
+
+> 🧪 **Example (Activity, Both):** A bimodal profile with peaks around ZT0 (morning peak, M) and ZT12 (evening peak, E) is the hallmark of a well-entrained wild-type LD 12:12 experiment. Comparing profiles between genotypes is a common way to assess circadian differences.
+
+> 🧪 **Example (Sleep, Days):** Averaging sleep data over days shows whether each fly's sleep profile is stable. Flies with high day-to-day variation may be unhealthy or arrhythmic.
+
+---
+
+### Tab 7: Sleep Statistics
+
+**Purpose:** Quantitative summary of sleep architecture — how much sleep each fly gets, when, and in what structure (bout number, duration, latency). **This tab is only functional when "Sleep" is selected in Tab 1.**
+
+---
+
+#### Sidebar controls
+
+**Channels to remove:** Exclude dead flies. See [Section 5](#5-removing-dead-or-unwanted-channels).
+
+**Length of photoperiod (h)**
+Default: 12. Tells the app where the day/night boundary is so statistics can be separated into "day sleep" and "night sleep". Set this to the length of the light phase of your LD cycle (e.g., 12 for LD 12:12, 8 for LD 8:16).
+
+> ⚠️ In DD, there is technically no photoperiod. Set this to 12 as a placeholder to split data into subjective day and night.
+
+**Channel to visualize**
+Default: 1. Selects which fly is displayed in the Bout Distribution and Hypnogram sub-tabs.
+
+---
+
+#### Main panel sub-tabs
+
+**Bout distribution**
+A histogram showing the frequency distribution of sleep bout lengths (in minutes) for the selected channel, pooled across all days of the analysis window. This tells you whether the fly predominantly takes many short naps versus fewer long consolidated sleep bouts.
+
+**Bout distribution data**
+A matrix (rows = bout index, columns = channels) of all sleep bout lengths. Downloadable as `.csv`.
+
+**Hypnograms**
+A four-level sleep staging visualization for the selected channel, reminiscent of a human hypnogram (EEG sleep staging):
+
+| Color | Stage | Definition |
+|---|---|---|
+| 🟠 Orange-red | Active (awake) | Fly is moving |
+| 🔵 Light blue | Short sleep | Inactivity bout 5–30 min |
+| 🔵 Medium blue | Intermediate sleep | Inactivity bout 30–60 min |
+| 🔵 Dark blue | Deep sleep | Inactivity bout ≥ 60 min |
+
+> ⚠️ The hypnogram is shown at 1-minute resolution across the entire recording length. It is most informative for recordings ≤ 10 days. At the moment this is most accurate for 24-h T-cycles (as noted in the app).
+
+**Sleep statistics plots**
+Four interactive box plots side by side:
+1. **Bout numbers** — Number of sleep bouts per day/night (blue = day, red = night).
+2. **Bout duration (median, mins)** — Median sleep bout length.
+3. **Bout latency (mins)** — Time from start of the day/night phase until the first sleep bout.
+4. **Total sleep (mins)** — Total minutes of sleep during the day/night.
+
+Each plot shows day values (blue boxes) and night values (red boxes), pooled across all flies in the monitor (excluding removed channels). These are ready-made summary statistics for group comparisons.
+
+**Sleep statistics data**
+The underlying table with one row per fly and columns for all eight statistics above (Day.BoutNumber, Night.BoutNumber, Day.BoutDuration.Median, Night.BoutDuration.Median, Day.Latency, Night.Latency, Day.Total, Night.Total). Downloadable as `.csv`.
+
+> 💻 Uses `sleepStat(data, sleep.def, t.cycle, photoperiod)` from the `phase` package. Bout distribution uses `sleepData()` at 1-min bins, then `rle()` (run-length encoding) to extract individual bout lengths.
+
+> 🧪 **Example:** You are comparing sleep in a short-sleeping mutant vs. wild-type in LD 12:12. Select `Analysis = Sleep`, `Sleep Definition = 5`, `Photoperiod = 12`. In the statistics data table, compare `Day.Total` and `Night.Total` between genotypes, then export both tables for statistical analysis in Prism or R.
+
+---
+
+### Tab 8: Anticipation (Activity)
+
+**Purpose:** Quantify how much flies ramp up their activity **before** the lights-on and lights-off transitions — a behavioral readout of circadian clock function. **Only available when Analysis = Activity.**
+
+---
+
+#### Sidebar controls
+
+**Channels to remove:** See [Section 5](#5-removing-dead-or-unwanted-channels).
+
+**Method for anticipation analysis**
+Options: `Slope` | `Harrisingh`
+
+- **Slope** (recommended for plots): Computes a linear regression slope of activity in the anticipation window. A steeper positive slope = stronger anticipation.
+- **Harrisingh**: An alternative index method (Harrisingh et al.). Available in Batch mode.
+
+> 💻 Calls `anticipationAct(data, method, t.cycle, morn.win.start, eve.win.start, eve.win.end, rm.channels)`.
+
+---
+
+**Start of morning window (ZT)**
+Default: 18. The anticipation window for morning (lights-on) anticipation starts at this ZT and always ends at ZT0 (lights on). So the default defines a 6-hour pre-lights-on window (ZT18–ZT24).
+
+> 🧪 **Typical setting:** ZT18 gives a 6-hour morning anticipation window. Some labs use ZT20 (4-hour window).
+
+**Start of evening window (ZT)**
+Default: 6. The anticipation window for evening (lights-off) anticipation starts at this ZT.
+
+**End of evening window (ZT)**
+Default: 12. The anticipation window ends at this ZT (= lights-off in LD 12:12).
+
+> 🧪 **Typical setting:** ZT6–ZT12 gives a 6-hour pre-lights-off evening anticipation window.
+
+**Max value of y-axis**
+Default: `Automatic`. Leave as `Automatic` to let the app scale the axes. Enter a number (e.g., `50`) to fix the y-axis across genotypes for fair visual comparison.
+
+---
+
+#### Main panel outputs
+
+**Plots tab:** Two side-by-side panels:
+- **Left**: Morning anticipation — activity profile in the pre-lights-on window, across all flies (individual traces overlaid). Y-axis = activity. X-axis = ZT hours.
+- **Right**: Evening anticipation — same for the pre-lights-off window.
+
+**Data tab:** A table of anticipation indices (slope values) for each fly, for both morning and evening windows. Downloadable.
+
+> 🧪 **Example:** Wild-type flies should show a clear positive slope (increasing activity) in both morning and evening anticipation windows. *period*⁰¹ arrhythmic mutants show flat or disorganized anticipation. *clockwork orange* mutants often show altered evening anticipation specifically.
+
+---
+
+### Tab 9: Phases of Peaks
+
+**Purpose:** Automatically identify and extract the ZT time of the **morning (M) and evening (E) activity peaks** for every fly, using signal processing. **Only available when Analysis = Activity.**
+
+This tab uses a Savitzky-Golay smoothing filter to reduce noise, then finds peaks closest to your expected M and E peak times.
+
+---
+
+#### Sidebar controls
+
+**Filter Order**
+Default: 3. The polynomial order of the Savitzky-Golay smoothing filter. Higher order = more local detail retained but more sensitive to noise. 3 is a good default.
+
+> 💻 This is the order of the polynomial fit in the local smoothing window. For the computationally inclined: the filter is applied to 5-min binned data using the `signal` or equivalent package.
+
+**Filter Length**
+Default: 51. Must be an **odd number**. This is the window width of the smoothing filter, expressed in **5-minute time bins**.
+- 51 bins × 5 min = 255 min ≈ 4.25 hours of smoothing.
+- Increase for very noisy data (more smoothing). Decrease if peaks are sharp and close together.
+
+**Minimum distance between peaks**
+Default: 100. The minimum number of 5-minute bins between two detected peaks for them to be counted as separate events.
+- 100 bins × 5 min = 500 min ≈ 8.3 hours.
+- This prevents a broad M peak from being called as two peaks. Setting this too low can cause spurious double-peaks.
+
+**Peak height scaling factor**
+Default: 0.5. The relative height that a secondary peak must be (as a fraction of the primary peak) to qualify as a peak. 0.5 means a secondary peak must be at least 50% as tall as the main peak.
+
+**Expected time of morning peak (ZT)**
+Default: `0`. The ZT hour at which you expect the M peak. The algorithm identifies the detected peak **closest** to this value.
+
+**Expected time of evening peak (ZT)**
+Default: `12`. The ZT hour at which you expect the E peak.
+
+**Generate plots and data (button)**
+Runs the analysis. Click when ready.
+
+---
+
+#### Main panel outputs
+
+**Plots tab:** An interactive plot showing the smoothed activity profile for all flies with the detected M and E peaks marked. Allows visual quality control.
+
+**Data tab:** A table with columns: Channel, detected morning peak time (ZT), detected evening peak time (ZT). Downloadable as `.csv`.
+
+> 🧪 **Example:** For LD 12:12 wild-type flies, set morning peak ZT = 0, evening peak ZT = 12. The algorithm will find the closest peak to ZT0 (usually within ZT23–ZT1) and the closest to ZT12 (usually ZT10–ZT14) for each fly. These phase values are then ready for circular statistics analysis.
+
+> 💻 Calls `peakIdentifier(data, filt.order, filt.length, min.peak.dist, peak.ht.scal, ZT=c(ZT1,ZT2), rm.channels)` from the `phase` package.
+
+---
+
+### Tab 10: Rose Plots and CoM
+
+**Purpose:** Visualize and quantify the **circular distribution of activity or sleep** across the day using circular statistics. This is the correct statistical framework for time-of-day data, where 24 h and 0 h are the same point.
+
+---
+
+#### Sidebar controls
+
+**Channels to remove:** See [Section 5](#5-removing-dead-or-unwanted-channels).
+
+**Start and end times of morning window (ZT)**
+Default: `21,3`. Format: `start,end` (no spaces). This defines the morning time window for Centre of Mass calculation. `21,3` means ZT21 through ZT3 (wrapping through midnight).
+
+**Start and end times of evening window (ZT)**
+Default: `9,15`. This defines the evening window. `9,15` means ZT9 through ZT15.
+
+> 💻 These windows are passed as `window=list(c(win1.start,win1.end), c(win2.start,win2.end))` to `CoM()`.
+
+---
+
+#### Main panel outputs
+
+**Plots tab (two side-by-side panels):**
+
+**Rose plot (left):** A circular/polar plot where:
+- The clock face represents one full cycle (0° = ZT0, going clockwise).
+- Each "petal" represents one time bin.
+- The length (radius) of each petal = the mean activity or sleep value at that time.
+- A long petal at a particular angle means the fly is particularly active/asleep at that time of day.
+
+For Activity in LD 12:12, you expect two lobes: one near ZT0 (morning peak) and one near ZT12 (evening peak). A single lobe indicates a unimodal pattern. No clear lobes = arrhythmic.
+
+**CoM plot (right):** A polar scatter plot where each **dot represents one fly's Centre of Mass** — the "average time of day" of its activity or sleep, weighted by how much activity it has at each time. All dots from one group cluster near the same angle if the flies are well-entrained.
+
+- Dots near the rim (radius close to 1) = concentrated activity → strong rhythmicity.
+- Dots near the center (radius close to 0) = diffuse activity → weak or arrhythmic.
+
+> 💻 `CoM()` from the `phase` package uses circular mean statistics: it computes a weighted mean angle (θ) and mean vector length (r) for each fly using `sin/cos` decomposition of the activity profile, separately within each defined time window.
+
+**Data tab:** A table with one row per fly, columns include the CoM angle (phase, in ZT hours) and the mean vector length (r) for each window. Downloadable as `.csv`.
+
+> 🧪 **Example:** You want to compare the morning phase of wild-type vs. a delayed-phase mutant. Set morning window = `21,3`. Both groups' CoM plots will show dots clustered around ZT0 for wild-type and shifted toward, say, ZT2–3 for the mutant. Use the downloaded CoM angles as input to a Watson-Williams circular ANOVA or Rayleigh test in a statistics package.
+
+---
+
+### Tab 11: Batch Process
+
+**Purpose:** Run the same analysis on **multiple DAM monitor files simultaneously** and compile the results into a single downloadable table. This is essential for experiments that span multiple monitors or require comparing multiple genotypes.
+
+---
+
+#### Sidebar controls
+
+**Choose scanned monitor files (multiple selection)**
+Click Browse and select multiple `.txt` files at once (hold Ctrl/Cmd to select multiple). Each file is treated as one monitor.
+
+**Analysis start date and time, Number of days, Input/Output bins, T-cycle:**
+Same as Tab 1, but applied to all files identically. All monitors must have been run under the same conditions.
+
+**Batch data to analyse and download**
+Choose one analysis type to run across all monitors:
+
+| Option | What is compiled |
+|---|---|
+| **Period and power** | Period and significance for all channels across all monitors |
+| **Profiles** | Activity or sleep profiles |
+| **Anticipation** | Anticipation indices (morning and evening) |
+| **Phases of activity peaks** | M and E peak phases from `peakIdentifier` |
+| **Sleep statistics** | Bout number, duration, latency, total sleep for each fly |
+| **Circular statistics** | CoM angles and vector lengths |
+
+Depending on your chosen analysis, **conditional panels** appear in the sidebar with the relevant sub-settings (method, sleep definition, windows, etc.).
+
+---
+
+#### Main panel outputs
+
+**Preview details tab:** Confirms the list of uploaded files.
+
+**Output File Names and Download Data tab:**
+- A preview of the first few rows of the compiled output.
+- A **Download data** button that saves the compiled table as a timestamped `.csv`.
+
+**Output format:** The compiled table has an added first column called `MonitorDetails` which contains the filename of each source monitor. This is how you identify which row came from which experiment/genotype.
+
+> 🧪 **Example use case:** You have three monitors of wild-type, three of *timeless*⁰¹, and three of *period*⁰¹ from a DD free-running experiment. Name your files descriptively (e.g., `WT_monitor1.txt`, `tim01_monitor1.txt`). Upload all 9 files. Select `Period and power` with ChiSquare, period range 16–32 h. Click Download. You get a single CSV with period estimates and power values for all flies from all monitors, labelled by filename. Import this into Prism or R for statistics.
+
+> 💻 The batch engine loops over all uploaded files, calling the appropriate `phase` package function for each, and collates outputs using `do.call(cbind, new.df)` after prepending the `MonitorDetails` column.
+
+---
+
+## 5. Removing Dead or Unwanted Channels
+
+Several tabs (CWT, Profiles, Sleep Statistics, Anticipation, Rose Plots/CoM) have a **"Channels to remove"** text input. This allows you to exclude dead flies, empty tubes, or outliers before population-level calculations.
+
+**Syntax rules:**
+
+| What you want | What to type |
+|---|---|
+| No channels removed | `None` |
+| Remove single channels | `1,5,14` |
+| Remove a continuous range | `1:10` (removes channels 1 through 10) |
+| Remove a mix | `1,3,5,17:20,31:32` |
+
+> 🧪 **How to decide which channels to remove:** Look at the Full Monitor Data tab first. Channels with zero activity across the entire recording are dead flies or empty tubes. Channels with extremely high noise (constant high activity, no day-night pattern) may have tube obstructions or monitor malfunctions. Use your best judgment — only remove channels with clearly technical artifacts, not biological outliers.
+
+> ⚠️ This exclusion is **local** to each analysis tab. It does not persist globally. If you want to exclude the same channels everywhere, you must re-enter the same channel list in each tab's sidebar.
+
+---
+
+## 6. Downloading Your Results
+
+Every analysis tab has a **Download data** button. Files are saved as:
+- `.csv` for most analyses (period/power, profiles, phases, sleep statistics, CoM, anticipation, batch)
+- `.xlsx` for CWT scalogram data (one sheet per fly)
+
+Filenames are automatically generated with a timestamp (e.g., `Profiles_2025-06-01 14:32:00.csv`). This prevents accidental overwriting across sessions.
+
+**Summary of downloadable outputs:**
+
+| Tab | Downloaded file | Contents |
+|---|---|---|
+| Tab 3 (Periodograms) | `AllPeriodPower_*.csv` | Period & power values per fly |
+| Tab 4 (Individual Data) | `Phase_fromActograms_*.csv` | Manually picked phase, cycle, channel |
+| Tab 5 (CWT) | `CWT_PeriodPower_*.csv` | Time-averaged normalized power per period |
+| Tab 5 (CWT) | `CWT_ScalogramData_*.xlsx` | Full normalized power matrices per fly |
+| Tab 5 (CWT) | `UltradianPeriodsExtracted_*.csv` | Dominant ultradian period per fly |
+| Tab 6 (Profiles) | `Profiles_*.csv` | Profile matrix (bins × channels or averaged) |
+| Tab 7 (Sleep Stats) | `SleepStats_*.csv` | Bout number, duration, latency, total per fly |
+| Tab 7 (Bout Dist) | `BoutDistribution_*.csv` | All sleep bout lengths per fly |
+| Tab 8 (Anticipation) | `AnticipationLatency_*.csv` | Morning and evening anticipation indices |
+| Tab 9 (Peak Phases) | `IdentifiedPeakPhases_*.csv` | M and E peak ZT times per fly |
+| Tab 10 (CoM) | `CenterOfMass_*.csv` | CoM angle and vector length per fly |
+| Tab 11 (Batch) | Various `Compiled_*` files | Compiled data across all monitors |
+
+---
+
+## 7. Worked Example: A Full Analysis Walkthrough
+
+**Scenario:** You recorded 32 wild-type *w*¹¹¹⁸ flies for 5 days in LD 12:12 (lights on at ZT0, midnight) then 5 days in DD. Your DAM files were recorded at 1-minute resolution. You want to: (1) confirm entrainment and estimate τ, (2) extract evening peak phases, (3) quantify sleep, and (4) check for ultradian rhythms.
+
+---
+
+**Step 1 — Set up Tab 1 (Input)**
+- Upload your `.txt` file.
+- Start date/time: `01 Jun 25; 00:00` (first lights-on).
+- Days: `10` (5 LD + 5 DD).
+- Input bin: `1`.
+- Output bin: `30`.
+- T-cycle: `24`.
+- Analysis: `Activity`.
+- Click **Preview data** and confirm the first row is at ZT0 and channels 11–42 show numbers.
+
+**Step 2 — Quick QC with Full Monitor Data (Tab 2)**
+- Scan all 32 channels. Note any flat (dead) or extremely noisy channels. Write them down (e.g., channels 3, 17, 25).
+
+**Step 3 — Period estimation (Tab 3)**
+- Method: `ChiSquare`.
+- Period range: 18–30 h. Alpha: 0.05. Resolution: 20 min.
+- Click **Generate plots and data**.
+- Most channels should show a peak near 24 h above the red line.
+- Download the data table.
+
+**Step 4 — Evening peak phase extraction (Tab 9)**
+- Morning peak ZT: `0`. Evening peak ZT: `12`.
+- Filter: order 3, length 51. Min peak dist: 100. Height scaling: 0.5.
+- Click **Generate plots and data**. Inspect the plot to confirm peaks are correctly identified.
+- Download the data table (one E-peak ZT value per fly).
+
+**Step 5 — Sleep analysis (Tab 1 → Tabs 6, 7)**
+- Go back to Tab 1. Change **Data to analyse** to `Sleep`. Sleep definition: `5`.
+- Navigate to **Tab 6 (Profiles)**. Select average type = `Both`. Add channels 3,17,25 to remove.
+- View the mean sleep profile. Download.
+- Navigate to **Tab 7 (Sleep Statistics)**. Set Photoperiod = `12`. Add channels 3,17,25 to remove.
+- Download the sleep statistics table.
+
+**Step 6 — Ultradian rhythms (CWT, Tab 5)**
+- Go back to Tab 1, switch back to `Activity`.
+- Go to Tab 5. Period range: 1–35 h. Remove channels 3,17,25. Edge removal: `TRUE`. Bootstrap: `TRUE`. z.max: 1.
+- Click **Analyze and Plot** and wait.
+- Examine mean scalogram for bands between 1–12 h. Set ultradian window to 1–4 h and download the dominant period table.
+
+---
+
+## 8. Frequently Asked Questions
+
+**Q: My data preview looks completely wrong — all zeros or unreadable columns.**
+A: Most likely your input bin is set incorrectly, or the start date/time does not match any rows in your file. Verify the date format exactly: `DD Mon YY; HH:MM` (e.g., `01 Jun 25; 00:00`). Check your DAM acquisition log for the actual recording start time.
+
+---
+
+**Q: The periodogram shows no significant peaks for most flies, even though the actograms look rhythmic.**
+A: The most common causes: (1) **period range is wrong** — your flies may have τ outside 18–30 h; try 16–32 h; (2) **resolution is too coarse** — try 10 min; (3) **too few days** — chi-square periodograms need at least 10 complete cycles; (4) **wrong input bin** — double-check against your DAM settings.
+
+---
+
+**Q: The CWT analysis is taking forever.**
+A: CWT on 32 channels at 1-min resolution over 10 days is computationally heavy. Options: (1) increase your output bin to 5 or 10 min before running CWT; (2) reduce the period range; (3) turn off bootstrapping (`FALSE`) while exploring; (4) run on a faster computer.
+
+---
+
+**Q: How do I compare two genotypes?**
+A: Run phaseR separately on each genotype's monitor files, download the relevant output tables, and import them into a statistics program (Prism, R, SPSS). For period and phase, use appropriate tests (Watson-Williams, circular ANOVA for phases; t-test or Mann-Whitney for periods and sleep statistics).
+
+---
+
+**Q: Can I use phaseR for T-cycle experiments (e.g., T22 or T26)?**
+A: Yes. Set **T-cycle/Modulo tau** to 22 or 26. Set your **start time** to lights-on. Set **Period range** in the periodogram to bracket your expected τ.
+
+---
+
+**Q: Can I use this for LL (constant light) or temperature-cycle experiments?**
+A: Yes for LL (the app does not care about light conditions — it just analyzes the time series). For temperature cycles, as long as your DAM data is in the standard format, you can set times of the temperature cycle appropriately.
+
+---
+
+**Q: Phase picking in Tab 4 is tedious for 32 flies. Is there a faster way?**
+A: Use **Tab 9 (Phases of Peaks)** for automated peak detection — it extracts M and E phases for all flies simultaneously. Tab 4 phase picking is best reserved for special cases where the automated method fails or for non-activity landmarks (e.g., activity onset, not peak).
+
+---
+
+## 9. Glossary
+
+| Term | Definition |
+|---|---|
+| **Actogram** | A double-plotted raster chart of activity over time. Each row = one day; consecutive days are stacked to reveal period drift. |
+| **Somnogram** | The sleep equivalent of an actogram — a raster chart of sleep over time. |
+| **T-cycle / Modulo tau (τ)** | The period of the experimental light-dark cycle, used to fold data for display. Set to 24 for LD 12:12; can be set to your estimated free-running period for DD data. |
+| **ZT (Zeitgeber Time)** | Time relative to the light-dark cycle. ZT0 = lights on. ZT12 = lights off (in LD 12:12). |
+| **CT (Circadian Time)** | Time in constant conditions. CT0 = subjective dawn. Used for free-running experiments. |
+| **Free-running period (τ)** | The period of the rhythm in constant conditions (e.g., DD), determined by the animal's internal clock alone. |
+| **Input bin** | The time resolution of raw DAM data (usually 1 min). |
+| **Output bin** | The re-binned time resolution used for analysis and display (e.g., 30 min). |
+| **Chi-square periodogram** | Sokolove-Bushell method; tests for significant periodicities using a chi-square statistic. Best for robust DD/LL data. |
+| **Lomb-Scargle periodogram** | A spectral method suited to noisy or gappy data. |
+| **Autocorrelation periodogram** | Detects periodicity by measuring self-similarity of a signal across time lags. |
+| **CWT (Continuous Wavelet Transform)** | A time-frequency analysis that shows how rhythmic power at different periods changes over time. Good for ultradian and non-stationary rhythms. |
+| **Scalogram** | The heatmap output of a CWT. X-axis = time, Y-axis = period, color = power. |
+| **Ultradian rhythm** | A rhythm with a period shorter than 24 h (e.g., 90-min rest-activity cycles). |
+| **Sleep definition** | The minimum consecutive inactivity duration (in minutes) required to score a period as sleep. Standard: 5 min. |
+| **Bout** | A continuous uninterrupted period of sleep (or activity). |
+| **Sleep latency** | The time from the start of a day or night phase until the first sleep bout. |
+| **Anticipation** | The increase in activity that precedes a predictable event (lights-on or lights-off), reflecting the clock's predictive ability. |
+| **Savitzky-Golay filter** | A polynomial smoothing filter used in Tab 9 to reduce noise before peak detection. |
+| **Centre of Mass (CoM)** | The circular-statistics "average time of day" of a fly's activity — the weighted mean angle of the activity distribution over one cycle. |
+| **Rose plot** | A circular/polar bar chart where each petal's length represents activity at a given time of day. |
+| **Mean vector length (r)** | A measure of circular concentration. r = 1 means all activity is at exactly one time point (perfect rhythmicity). r = 0 means activity is evenly spread (arrhythmic). |
+| **Phase** | The timing of a rhythmic event relative to a reference point (usually ZT0 or CT0). |
+| **M peak** | Morning activity peak, typically occurring around ZT0–ZT2 in LD 12:12 wild-type flies. |
+| **E peak** | Evening activity peak, typically occurring around ZT10–ZT12 in LD 12:12 wild-type flies. |
+| **Channel** | One lane of a DAM monitor, corresponding to one fly. A single monitor has 32 channels. |
+| **Batch processing** | Running the same analysis pipeline on multiple DAM monitor files automatically, compiling results into one output file. |
+
